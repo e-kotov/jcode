@@ -18,6 +18,7 @@ hardcoded, so no config setting or environment variable is needed:
 | [`0002-update-from-fork`](patches/0002-update-from-fork.patch) | The built-in updater checks and downloads **only from this repository's releases**, with SHA-256 verification. The `main` update channel, which builds from upstream source, falls back to stable releases. |
 | [`0003-no-macos-extras`](patches/0003-no-macos-extras.patch) | No `~/.jcode/notifications/macos/Jcode Notifications.app`, no `~/Library/LaunchAgents/com.jcode.hotkey.plist` hotkey daemon, no auto-started menu bar helper, and no terminal-switching nudges. A hotkey LaunchAgent left by an upstream install is removed on the next launch. `jcode setup-hotkey` and `jcode setup-launcher` report that they are disabled. Turn notifications still work through the terminal or `osascript`. |
 | [`0004-discovery-off`](patches/0004-discovery-off.patch) | The sponsored integration-discovery tool (`discover_tools`, `api.jcode.sh`) is never registered or contacted, whatever `[sponsors]` says in the config. |
+| [`0005-no-background-key-probes`](patches/0005-no-background-key-probes.patch) | No background sweep that calls `/models` on every provider whose key is in the environment. MiniMax never falls back to `OPENAI_API_KEY`, which often holds another provider's key. The provider you actually use still refreshes its own model list. |
 
 The installer ([`install.sh`](install.sh)) is also stripped down. It sends no
 telemetry, uses no `jcode.sh` mirrors and does not edit shell rc files. It does
