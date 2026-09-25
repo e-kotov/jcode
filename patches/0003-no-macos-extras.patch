@@ -1,0 +1,126 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Egor Kotov <kotov.egor@gmail.com>
+Date: Fri, 25 Sep 2026 21:57:14 +0200
+Subject: [PATCH 3/4] macos: no notification app, hotkey LaunchAgent, menubar
+ helper or terminal nudges
+
+---
+ crates/jcode-setup-hints/src/lib.rs | 32 +++++++++++++++++++++++++----
+ src/cli/commands/menubar.rs         |  5 +++++
+ src/cli/dispatch.rs                 |  3 ++-
+ 3 files changed, 35 insertions(+), 5 deletions(-)
+
+diff --git a/crates/jcode-setup-hints/src/lib.rs b/crates/jcode-setup-hints/src/lib.rs
+index a89d4f50d..f925152fc 100644
+--- a/crates/jcode-setup-hints/src/lib.rs
++++ b/crates/jcode-setup-hints/src/lib.rs
+@@ -673,6 +673,10 @@ pub fn run_setup_hotkey(
+         if _uninstall {
+             return uninstall_macos_hotkey_listener();
+         }
++        if !MACOS_EXTRAS {
++            eprintln!("jcode setup-hotkey: disabled in this build (e-kotov/jcode).");
++            return Ok(());
++        }
+ 
+         let mut state = SetupHintsState::load();
+         let terminal = effective_macos_terminal();
+@@ -1207,6 +1211,11 @@ fn mac_hotkey_action_for_state(
+ /// - Windows: On every 3rd launch, can show hotkey + Alacritty nudges.
+ /// - macOS: On every 3rd launch, can suggest Ghostty and optionally hand off
+ ///   to AI-guided setup by returning a prebuilt prompt.
++/// e-kotov/jcode: never install macOS extras (notification helper app,
++/// hotkey LaunchAgent, terminal nudges) on launch. A hotkey LaunchAgent left
++/// by an upstream install is removed instead.
++const MACOS_EXTRAS: bool = false;
++
+ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
+     if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+         return None;
+@@ -1218,14 +1227,18 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
+ 
+     #[cfg(any(test, target_os = "macos"))]
+     {
+-        if should_refresh_macos_app_launcher(&state) {
++        if MACOS_EXTRAS && should_refresh_macos_app_launcher(&state) {
+             let _ = create_desktop_shortcut(&mut state);
+         }
+     }
+ 
+     #[cfg(target_os = "macos")]
+     {
+-        match mac_hotkey_action_for_state(&state, load_launch_hotkeys_config().enabled) {
++        let action = match mac_hotkey_action_for_state(&state, load_launch_hotkeys_config().enabled) {
++            _ if !MACOS_EXTRAS => MacHotkeyAction::Disable,
++            action => action,
++        };
++        match action {
+             MacHotkeyAction::Install => {
+                 if let Err(err) = auto_install_macos_hotkey_listener(&mut state) {
+                     jcode_logging::warn(&format!(
+@@ -1325,7 +1338,13 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
+     let startup_hints = startup_hints_for_launch(&state);
+ 
+     #[cfg(target_os = "macos")]
+-    let startup_hints = startup_hints.or_else(|| macos_launch_hotkeys_notice(&state));
++    let startup_hints = startup_hints.or_else(|| {
++        if MACOS_EXTRAS {
++            macos_launch_hotkeys_notice(&state)
++        } else {
++            None
++        }
++    });
+ 
+     #[cfg(target_os = "macos")]
+     {
+@@ -1333,7 +1352,8 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
+             return startup_hints;
+         }
+ 
+-        if !state.mac_ghostty_guided
++        if MACOS_EXTRAS
++            && !state.mac_ghostty_guided
+             && !state.mac_ghostty_dismissed
+             && state.nudge_budget_remaining()
+         {
+@@ -2413,6 +2433,10 @@ For full color, use Ghostty, iTerm2, kitty, or WezTerm, or set JCODE_GLYPH_SAFE_
+ pub fn run_setup_launcher() -> Result<()> {
+     #[cfg(target_os = "macos")]
+     {
++        if !MACOS_EXTRAS {
++            eprintln!("jcode setup-launcher: disabled in this build (e-kotov/jcode).");
++            return Ok(());
++        }
+         let mut state = SetupHintsState::load();
+         eprintln!("\x1b[1mjcode setup-launcher\x1b[0m");
+         eprintln!();
+diff --git a/src/cli/commands/menubar.rs b/src/cli/commands/menubar.rs
+index 7812ca2c7..9b4e9fe15 100644
+--- a/src/cli/commands/menubar.rs
++++ b/src/cli/commands/menubar.rs
+@@ -152,6 +152,11 @@ pub fn ensure_menubar_helper_running() {
+     use std::os::unix::process::CommandExt;
+     use std::process::{Command, Stdio};
+ 
++    // e-kotov/jcode: never auto-start the menu bar helper; `jcode menubar`
++    // still starts it on request.
++    if cfg!(target_os = "macos") {
++        return;
++    }
+     // Allow users to opt out entirely.
+     if std::env::var_os("JCODE_NO_MENUBAR").is_some() {
+         return;
+diff --git a/src/cli/dispatch.rs b/src/cli/dispatch.rs
+index b3ed62549..38df74deb 100644
+--- a/src/cli/dispatch.rs
++++ b/src/cli/dispatch.rs
+@@ -932,7 +932,8 @@ async fn run_default_command(args: Args) -> Result<()> {
+         // can take a few hundred ms, so run it on a detached thread to keep it off
+         // the first-frame critical path. It is gated by an `imported` flag, so it
+         // does real work at most once and no-ops on every later launch.
+-        if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
++        // e-kotov/jcode: no launch hotkeys on macOS, so nothing to bake.
++        if !cfg!(target_os = "macos") && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+             std::thread::Builder::new()
+                 .name("launch-hotkey-bake".to_string())
+                 .spawn(|| {

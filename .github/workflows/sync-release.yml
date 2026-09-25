@@ -1,0 +1,186 @@
+name: sync-release
+
+# Rebuild each upstream 1jehuang/jcode release for macOS arm64 with the
+# patches in patches/, and publish it under the same tag in this repo.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to (re)build, e.g. v0.88.0. Empty = latest upstream release."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: 1jehuang/jcode
+  ARTIFACT: jcode-macos-aarch64
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      build: ${{ steps.pick.outputs.build }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_TAG:-}" ]; then
+            tag="$INPUT_TAG"
+            build=true
+          else
+            # Latest published, non-draft, non-prerelease upstream release.
+            tag=$(gh release view --repo "$UPSTREAM" --json tagName -q .tagName)
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              build=false
+            else
+              build=true
+            fi
+          fi
+          # jcode's updater only understands plain vX.Y.Z tags.
+          printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::unexpected upstream tag '$tag'"; exit 1; }
+          echo "Upstream tag: $tag, build: $build"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = arm64
+
+      - name: Check out upstream release
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM }}
+          ref: ${{ needs.check.outputs.tag }}
+          path: src
+          # Full history: the build embeds the recent changelog for /changelog.
+          fetch-depth: 0
+
+      - name: Check out fork files
+        uses: actions/checkout@v4
+        with:
+          path: fork
+
+      - name: Apply patches
+        working-directory: src
+        run: |
+          set -euo pipefail
+          for p in ../fork/patches/*.patch; do
+            echo "::group::$p"
+            git apply --3way --verbose "$p"
+            echo "::endgroup::"
+          done
+          # --3way leaves conflict markers instead of failing hard on some
+          # conflicts; refuse to build in that case.
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "::error::patch conflicts against $TAG"; git diff --diff-filter=U; exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+
+      - name: Build
+        working-directory: src
+        env:
+          JCODE_RELEASE_BUILD: "1"
+          JCODE_CI_BUILD: "1"
+          JCODE_BUILD_SEMVER: ${{ needs.check.outputs.tag }}
+        run: cargo build --locked --release -p jcode --bin jcode
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp src/target/release/jcode "dist/$ARTIFACT"
+          chmod +x "dist/$ARTIFACT"
+          cd dist
+          tar czf "$ARTIFACT.tar.gz" "$ARTIFACT"
+          shasum -a 256 "$ARTIFACT.tar.gz" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          export JCODE_HOME="$RUNNER_TEMP/jcode-home" JCODE_NO_AUTO_UPDATE=1
+          out=$("dist/$ARTIFACT" --version)
+          echo "$out"
+          echo "$out" | grep -F "${TAG#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/${{ env.ARTIFACT }}.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Record upstream release
+        run: |
+          set -euo pipefail
+          # The commit also keeps the scheduled workflow alive: GitHub disables
+          # schedules in repos without commits for 60 days.
+          echo "$TAG" > UPSTREAM_RELEASE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add UPSTREAM_RELEASE
+          git commit -m "Build upstream $TAG" --allow-empty
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          assets=("dist/$ARTIFACT.tar.gz" dist/SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Fork-only rebuild of an existing version: replace the assets.
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            cat > notes.md <<EOF
+          macOS arm64 rebuild of upstream [$TAG](https://github.com/$UPSTREAM/releases/tag/$TAG).
+
+          Patched as described in the [README](https://github.com/$GITHUB_REPOSITORY#what-is-changed):
+          telemetry off, updates only from this repository, no macOS extras
+          (notification app, hotkey LaunchAgent, menu bar helper), integration discovery off.
+
+          Upstream release notes: https://github.com/$UPSTREAM/releases/tag/$TAG
+          EOF
+            gh release create "$TAG" "${assets[@]}" \
+              --target "$(git rev-parse HEAD)" \
+              --title "jcode $TAG (macOS arm64)" \
+              --notes-file notes.md
+          fi

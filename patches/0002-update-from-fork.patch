@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Egor Kotov <kotov.egor@gmail.com>
+Date: Fri, 25 Sep 2026 21:56:16 +0200
+Subject: [PATCH 2/4] update: pull releases only from e-kotov/jcode; serve main
+ channel from stable
+
+---
+ crates/jcode-app-core/src/update.rs | 21 ++++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/crates/jcode-app-core/src/update.rs b/crates/jcode-app-core/src/update.rs
+index 31895b639..c63734831 100644
+--- a/crates/jcode-app-core/src/update.rs
++++ b/crates/jcode-app-core/src/update.rs
+@@ -28,7 +28,8 @@ use update_metadata::{record_release_update_duration, record_source_update_durat
+ pub use update_rate_limit::{RATE_LIMIT_ERROR_PREFIX, is_rate_limit_error};
+ use update_rate_limit::{clear_rate_limit_backoff, rate_limit_error};
+ 
+-const GITHUB_REPO: &str = "1jehuang/jcode";
++// e-kotov/jcode: updates come only from this fork's macOS arm64 releases.
++const GITHUB_REPO: &str = "e-kotov/jcode";
+ /// Minimum gap between *automatic* update checks.
+ ///
+ /// Every automatic check costs one or two unauthenticated `api.github.com`
+@@ -457,8 +458,22 @@ fn prepare_main_update_blocking() -> Result<PreparedUpdate> {
+     prepare_stable_update_blocking()
+ }
+ 
++/// e-kotov/jcode publishes binary releases only; it has no `main` source branch
++/// to build from, so the main channel is served from stable releases.
++fn effective_update_channel() -> crate::config::UpdateChannel {
++    match crate::config::config().features.update_channel {
++        crate::config::UpdateChannel::Main => {
++            crate::logging::info(
++                "Main update channel is not offered by e-kotov/jcode; using stable releases",
++            );
++            crate::config::UpdateChannel::Stable
++        }
++        channel => channel,
++    }
++}
++
+ pub fn prepare_update_blocking() -> Result<PreparedUpdate> {
+-    let channel = crate::config::config().features.update_channel;
++    let channel = effective_update_channel();
+     match channel {
+         crate::config::UpdateChannel::Main => prepare_main_update_blocking(),
+         crate::config::UpdateChannel::Stable => prepare_stable_update_blocking(),
+@@ -570,7 +585,7 @@ pub fn spawn_background_session_update(session_id: String) {
+ }
+ 
+ pub fn check_for_update_blocking() -> Result<Option<GitHubRelease>> {
+-    let channel = crate::config::config().features.update_channel;
++    let channel = effective_update_channel();
+     match channel {
+         crate::config::UpdateChannel::Main => check_for_main_update_blocking(),
+         crate::config::UpdateChannel::Stable => check_for_stable_update_blocking(),

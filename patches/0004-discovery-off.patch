@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Egor Kotov <kotov.egor@gmail.com>
+Date: Fri, 25 Sep 2026 21:57:38 +0200
+Subject: [PATCH 4/4] discovery: integration discovery off by default and
+ forced off at load
+
+---
+ crates/jcode-app-core/src/tool/discover.rs    | 3 +++
+ crates/jcode-base/src/config/env_overrides.rs | 4 ++++
+ crates/jcode-base/src/config_tests.rs         | 1 +
+ crates/jcode-base/src/mcp/manager.rs          | 1 +
+ crates/jcode-base/src/sponsors.rs             | 4 ++--
+ crates/jcode-base/src/sponsors/provenance.rs  | 1 +
+ crates/jcode-config-types/src/lib.rs          | 6 +++---
+ 7 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/crates/jcode-app-core/src/tool/discover.rs b/crates/jcode-app-core/src/tool/discover.rs
+index 9a310f35b..5500fbd37 100644
+--- a/crates/jcode-app-core/src/tool/discover.rs
++++ b/crates/jcode-app-core/src/tool/discover.rs
+@@ -2777,6 +2777,7 @@ mod tests {
+     }
+ 
+     #[tokio::test]
++    #[ignore = "integration discovery is hardcoded off in e-kotov/jcode"]
+     async fn execute_records_off_catalog_selection_without_provider_information() {
+         let _guard = crate::storage::lock_test_env();
+         let prev_home = std::env::var_os("JCODE_HOME");
+@@ -2836,6 +2837,7 @@ mod tests {
+     }
+ 
+     #[tokio::test]
++    #[ignore = "integration discovery is hardcoded off in e-kotov/jcode"]
+     async fn details_executes_through_public_tool_interface() {
+         let _guard = crate::storage::lock_test_env();
+         let prev_home = std::env::var_os("JCODE_HOME");
+@@ -2907,6 +2909,7 @@ mod tests {
+     }
+ 
+     #[tokio::test]
++    #[ignore = "integration discovery is hardcoded off in e-kotov/jcode"]
+     async fn git_category_executes_end_to_end_with_enabled_config_and_local_server() {
+         let _guard = crate::storage::lock_test_env();
+         let prev_home = std::env::var_os("JCODE_HOME");
+diff --git a/crates/jcode-base/src/config/env_overrides.rs b/crates/jcode-base/src/config/env_overrides.rs
+index 6b36ca7ee..51cca18c5 100644
+--- a/crates/jcode-base/src/config/env_overrides.rs
++++ b/crates/jcode-base/src/config/env_overrides.rs
+@@ -7,6 +7,10 @@ impl Config {
+         reason = "Environment override parsing is intentionally explicit and grouped by config area"
+     )]
+     pub(crate) fn apply_env_overrides(&mut self) {
++        // e-kotov/jcode: integration discovery (`discover_tools`, api.jcode.sh)
++        // is hardcoded off, whatever the config file says.
++        self.sponsors.enabled = false;
++
+         // Server/operator behavior
+         if let Ok(v) = std::env::var("JCODE_WAKE_MODE")
+             && let Some(parsed) = WakeMode::parse(&v)
+diff --git a/crates/jcode-base/src/config_tests.rs b/crates/jcode-base/src/config_tests.rs
+index 30de19c41..c659fd73d 100644
+--- a/crates/jcode-base/src/config_tests.rs
++++ b/crates/jcode-base/src/config_tests.rs
+@@ -1557,6 +1557,7 @@ fn sponsors_optout_survives_config_save_and_reload() {
+ }
+ 
+ #[test]
++#[ignore = "e-kotov/jcode: the off default is written back deliberately"]
+ fn default_sponsors_section_is_not_written_back() {
+     let config = Config::default();
+     let rendered = toml::to_string_pretty(&config).expect("serialize");
+diff --git a/crates/jcode-base/src/mcp/manager.rs b/crates/jcode-base/src/mcp/manager.rs
+index d1c554fba..cef3191ed 100644
+--- a/crates/jcode-base/src/mcp/manager.rs
++++ b/crates/jcode-base/src/mcp/manager.rs
+@@ -724,6 +724,7 @@ done
+     /// tags provenance and counts the connect, real MCP tool calls through
+     /// the manager are metered, non-matching servers are not.
+     #[tokio::test]
++    #[ignore = "integration discovery is hardcoded off in e-kotov/jcode"]
+     // The test-env mutex must intentionally stay held across awaits so the
+     // JCODE_HOME/config mutation stays serialized for the whole test.
+     #[allow(clippy::await_holding_lock)]
+diff --git a/crates/jcode-base/src/sponsors.rs b/crates/jcode-base/src/sponsors.rs
+index b7e6d9b15..dea3907b6 100644
+--- a/crates/jcode-base/src/sponsors.rs
++++ b/crates/jcode-base/src/sponsors.rs
+@@ -99,8 +99,8 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn discovery_is_enabled_by_default() {
++    fn discovery_is_disabled_by_default() {
+         let config = crate::config::Config::default();
+-        assert!(config.sponsors.enabled);
++        assert!(!config.sponsors.enabled);
+     }
+ }
+diff --git a/crates/jcode-base/src/sponsors/provenance.rs b/crates/jcode-base/src/sponsors/provenance.rs
+index 9f0579536..ba788daa1 100644
+--- a/crates/jcode-base/src/sponsors/provenance.rs
++++ b/crates/jcode-base/src/sponsors/provenance.rs
+@@ -238,6 +238,7 @@ mod tests {
+     }
+ 
+     #[test]
++    #[ignore = "integration discovery is hardcoded off in e-kotov/jcode"]
+     fn connect_matching_discovered_setup_tags_and_counts() {
+         let _env = enable_sponsors();
+         reset_for_tests();
+diff --git a/crates/jcode-config-types/src/lib.rs b/crates/jcode-config-types/src/lib.rs
+index ffefea093..f989164b6 100644
+--- a/crates/jcode-config-types/src/lib.rs
++++ b/crates/jcode-config-types/src/lib.rs
+@@ -983,8 +983,8 @@ pub struct AutoReviewConfig {
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ #[serde(default)]
+ pub struct SponsorsConfig {
+-    /// Enable integration discovery. Enabled by default; set to false to opt
+-    /// out. When false, no discovery categories are added to the prompt, the
++    /// Enable integration discovery. Disabled and forced off at load in
++    /// e-kotov/jcode. When false, no discovery categories are added to the prompt, the
+     /// `discover_tools` tool is not registered, and jcode never contacts the
+     /// discovery endpoint.
+     pub enabled: bool,
+@@ -995,7 +995,7 @@ pub struct SponsorsConfig {
+ impl Default for SponsorsConfig {
+     fn default() -> Self {
+         Self {
+-            enabled: true,
++            enabled: false,
+             endpoint: "https://api.jcode.sh/v1/discovery".to_string(),
+         }
+     }
