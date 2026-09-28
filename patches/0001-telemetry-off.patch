@@ -1,15 +1,14 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Egor Kotov <kotov.egor@gmail.com>
-Date: Fri, 25 Sep 2026 21:55:41 +0200
-Subject: [PATCH 1/4] telemetry: hardcode off; no path reaches
- telemetry.jcode.sh
+Date: Mon, 28 Sep 2026 17:28:42 +0200
+Subject: [PATCH] telemetry: hardcode off
 
 ---
  crates/jcode-telemetry-core/src/lib.rs        | 22 ++++++++++++++++++-
  .../tests/session_creation_latency.rs         |  1 +
- .../src/tui/app/tests/onboarding_flow.rs      |  7 +++---
+ .../src/tui/app/tests/onboarding_flow.rs      | 11 ++++------
  src/cli/telemetry.rs                          | 10 +--------
- 4 files changed, 27 insertions(+), 13 deletions(-)
+ 4 files changed, 27 insertions(+), 17 deletions(-)
 
 diff --git a/crates/jcode-telemetry-core/src/lib.rs b/crates/jcode-telemetry-core/src/lib.rs
 index 4bdbb8670..da3cbcf13 100644
@@ -99,26 +98,30 @@ index 63f2b9733..0e636f68f 100644
      const CHILD: &str = "JCODE_TEST_SESSION_LATENCY_CHILD";
      if std::env::var_os(CHILD).is_some() {
 diff --git a/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs b/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
-index 156e759bd..b6e718c4e 100644
+index 239082739..baf28b935 100644
 --- a/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
 +++ b/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
-@@ -1714,8 +1714,9 @@ fn telemetry_pill_opens_settings_page_and_commits_choice() {
+@@ -1714,10 +1714,9 @@ fn telemetry_pill_opens_settings_page_and_commits_choice() {
  
          // Enter commits "Send everything": usage on, content sharing on.
          assert!(app.handle_onboarding_continue_prompt_key(KeyCode::Enter));
--        assert!(crate::telemetry::is_enabled());
--        assert!(crate::telemetry::content_sharing_enabled());
-+        // e-kotov/jcode: usage telemetry is hardcoded off regardless of the choice.
+-        if !crate::telemetry::opt_out_forced_by_env() {
+-            assert!(crate::telemetry::is_enabled());
+-            assert!(crate::telemetry::content_sharing_enabled());
+-        }
++        // e-kotov/jcode: usage telemetry stays off regardless of the choice.
 +        assert!(!crate::telemetry::is_enabled());
 +        assert!(!crate::telemetry::content_sharing_enabled());
-         // We are back on the summary screen with the import still pending.
-         match app.onboarding_phase() {
-             Some(OnboardingPhase::Login {
-@@ -1756,7 +1757,7 @@ fn telemetry_page_send_nothing_disables_telemetry_and_esc_goes_back() {
+         let no_telemetry_marker = std::path::Path::new(
+             &std::env::var_os("JCODE_HOME").expect("temporary JCODE_HOME"),
+         )
+@@ -1766,9 +1765,7 @@ fn telemetry_page_send_nothing_disables_telemetry_and_esc_goes_back() {
              app.onboarding_phase(),
              Some(OnboardingPhase::Login { import: Some(_) })
          ));
--        assert!(crate::telemetry::is_enabled());
+-        if !crate::telemetry::opt_out_forced_by_env() {
+-            assert!(crate::telemetry::is_enabled());
+-        }
 +        assert!(!crate::telemetry::is_enabled());
  
          // Reopen, walk down to "Send nothing", commit.
