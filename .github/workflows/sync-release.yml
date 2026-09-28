@@ -1,6 +1,6 @@
 name: sync-release
 
-# Rebuild each upstream 1jehuang/jcode release for macOS arm64 with the
+# Rebuild each upstream 1jehuang/jcode release for macOS arm64 and Linux x86_64 with the
 # patches in patches/, and publish it under the same tag in this repo.
 on:
   schedule:
@@ -21,7 +21,8 @@ concurrency:
 
 env:
   UPSTREAM: 1jehuang/jcode
-  ARTIFACT: jcode-macos-aarch64
+  MAC_ARTIFACT: jcode-macos-aarch64
+  LINUX_ARTIFACT: jcode-linux-x86_64
 
 jobs:
   check:
@@ -113,31 +114,92 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp src/target/release/jcode "dist/$ARTIFACT"
-          chmod +x "dist/$ARTIFACT"
+          cp src/target/release/jcode "dist/$MAC_ARTIFACT"
+          chmod +x "dist/$MAC_ARTIFACT"
           cd dist
-          tar czf "$ARTIFACT.tar.gz" "$ARTIFACT"
-          shasum -a 256 "$ARTIFACT.tar.gz" > SHA256SUMS
-          cat SHA256SUMS
+          tar czf "$MAC_ARTIFACT.tar.gz" "$MAC_ARTIFACT"
 
       - name: Smoke test
         run: |
           set -euo pipefail
           export JCODE_HOME="$RUNNER_TEMP/jcode-home" JCODE_NO_AUTO_UPDATE=1
-          out=$("dist/$ARTIFACT" --version)
+          out=$("dist/$MAC_ARTIFACT" --version)
           echo "$out"
           echo "$out" | grep -F "${TAG#v}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: |
-            dist/${{ env.ARTIFACT }}.tar.gz
-            dist/SHA256SUMS
+          name: dist-macos
+          path: dist/${{ env.MAC_ARTIFACT }}.tar.gz
+          if-no-files-found: error
+
+  build-linux:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - name: Require an x86_64 runner
+        run: test "$(uname -m)" = x86_64
+
+      - name: Check out upstream release
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM }}
+          ref: ${{ needs.check.outputs.tag }}
+          path: src
+          fetch-depth: 0
+
+      - name: Check out fork files
+        uses: actions/checkout@v4
+        with:
+          path: fork
+
+      - name: Apply patches
+        working-directory: src
+        run: |
+          set -euo pipefail
+          for p in ../fork/patches/*.patch; do
+            echo "::group::$p"
+            git apply --3way --verbose "$p"
+            echo "::endgroup::"
+          done
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "::error::patch conflicts against $TAG"; git diff --diff-filter=U; exit 1
+          fi
+
+      - name: Build portable Linux binary
+        working-directory: src
+        env:
+          JCODE_RELEASE_BUILD: "1"
+          JCODE_CI_BUILD: "1"
+          JCODE_BUILD_SEMVER: ${{ needs.check.outputs.tag }}
+        run: scripts/build_linux_compat.sh dist
+
+      - name: Package and smoke test
+        working-directory: src
+        run: |
+          set -euo pipefail
+          test -s "dist/$LINUX_ARTIFACT.tar.gz"
+          mkdir -p "$RUNNER_TEMP/jcode-linux-smoke"
+          tar xzf "dist/$LINUX_ARTIFACT.tar.gz" -C "$RUNNER_TEMP/jcode-linux-smoke"
+          export JCODE_HOME="$RUNNER_TEMP/jcode-home" JCODE_NO_AUTO_UPDATE=1
+          out=$("$RUNNER_TEMP/jcode-linux-smoke/$LINUX_ARTIFACT" --version)
+          echo "$out"
+          echo "$out" | grep -F "${TAG#v}"
+          "$RUNNER_TEMP/jcode-linux-smoke/$LINUX_ARTIFACT" telemetry status --json \
+            | python3 -c 'import json,sys; assert json.load(sys.stdin)["enabled"] is False'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: src/dist/${{ env.LINUX_ARTIFACT }}.tar.gz
           if-no-files-found: error
 
   release:
-    needs: [check, build]
+    needs: [check, build, build-linux]
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.check.outputs.tag }}
@@ -147,8 +209,27 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-macos
           path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-linux
+          path: dist
+
+      - name: Prepare checksums and release notes
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum "$MAC_ARTIFACT.tar.gz" "$LINUX_ARTIFACT.tar.gz" > SHA256SUMS)
+          cat > notes.md <<EOF
+          macOS arm64 and Linux x86_64 rebuilds of upstream [$TAG](https://github.com/$UPSTREAM/releases/tag/$TAG).
+
+          Patched as described in the [README](https://github.com/$GITHUB_REPOSITORY#what-is-changed):
+          telemetry off, updates only from this repository, integration discovery and background
+          provider key probes off. The macOS build also omits notification, hotkey and menu bar helpers.
+
+          Upstream release notes: https://github.com/$UPSTREAM/releases/tag/$TAG
+          EOF
 
       - name: Record upstream release
         run: |
@@ -165,22 +246,14 @@ jobs:
       - name: Publish release
         run: |
           set -euo pipefail
-          assets=("dist/$ARTIFACT.tar.gz" dist/SHA256SUMS)
+          assets=("dist/$MAC_ARTIFACT.tar.gz" "dist/$LINUX_ARTIFACT.tar.gz" dist/SHA256SUMS)
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Fork-only rebuild of an existing version: replace the assets.
             gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --title "jcode $TAG (macOS arm64, Linux x86_64)" --notes-file notes.md
           else
-            cat > notes.md <<EOF
-          macOS arm64 rebuild of upstream [$TAG](https://github.com/$UPSTREAM/releases/tag/$TAG).
-
-          Patched as described in the [README](https://github.com/$GITHUB_REPOSITORY#what-is-changed):
-          telemetry off, updates only from this repository, no macOS extras
-          (notification app, hotkey LaunchAgent, menu bar helper), integration discovery off.
-
-          Upstream release notes: https://github.com/$UPSTREAM/releases/tag/$TAG
-          EOF
             gh release create "$TAG" "${assets[@]}" \
               --target "$(git rev-parse HEAD)" \
-              --title "jcode $TAG (macOS arm64)" \
+              --title "jcode $TAG (macOS arm64, Linux x86_64)" \
               --notes-file notes.md
           fi

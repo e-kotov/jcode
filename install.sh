@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Installer for e-kotov/jcode, a macOS arm64 rebuild of 1jehuang/jcode.
+# Installer for e-kotov/jcode macOS arm64 and Linux x86_64 builds.
 # Stripped from upstream scripts/install.sh: no telemetry, no jcode.sh
 # mirrors, no shell rc edits, no notification helper, no hotkey LaunchAgent.
 set -euo pipefail
 
 REPO="e-kotov/jcode"
-ARTIFACT="jcode-macos-aarch64"
 tmpdir=""
 
 info() { printf '\033[1;34m%s\033[0m\n' "$*"; }
@@ -18,8 +17,11 @@ valid_release_tag() {
   printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
-[ "$(uname -s)" = "Darwin" ] || err "This build supports macOS only (use upstream 1jehuang/jcode elsewhere)"
-[ "$(uname -m)" = "arm64" ] || err "This build supports Apple silicon (arm64) only"
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64) ARTIFACT="jcode-macos-aarch64" ;;
+  Linux:x86_64) ARTIFACT="jcode-linux-x86_64" ;;
+  *) err "This build supports macOS arm64 and Linux x86_64 only" ;;
+esac
 
 INSTALL_DIR="${JCODE_INSTALL_DIR:-$HOME/.local/bin}"
 
@@ -71,11 +73,13 @@ version="${VERSION#v}"
 dest_version_dir="$version_dir/$version"
 mkdir -p "$INSTALL_DIR" "$stable_dir" "$dest_version_dir"
 
-tar xzf "$tmpdir/jcode.tar.gz" -C "$tmpdir"
-[ -f "$tmpdir/$ARTIFACT" ] || err "Downloaded archive did not contain expected binary: $ARTIFACT"
-mv -f "$tmpdir/$ARTIFACT" "$dest_version_dir/jcode"
+tar xzf "$tmpdir/jcode.tar.gz" -C "$dest_version_dir"
+[ -f "$dest_version_dir/$ARTIFACT" ] || err "Downloaded archive did not contain expected binary: $ARTIFACT"
+mv -f "$dest_version_dir/$ARTIFACT" "$dest_version_dir/jcode"
 chmod +x "$dest_version_dir/jcode"
-xattr -d com.apple.quarantine "$dest_version_dir/jcode" 2>/dev/null || true
+if [ "$(uname -s)" = "Darwin" ]; then
+  xattr -d com.apple.quarantine "$dest_version_dir/jcode" 2>/dev/null || true
+fi
 
 # Same layout the built-in updater writes: versions/<v> -> stable -> launcher.
 ln -sfn "$dest_version_dir/jcode" "$stable_dir/jcode"

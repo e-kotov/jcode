@@ -1,8 +1,8 @@
-# jcode — stripped macOS arm64 build
+# jcode — stripped macOS arm64 and Linux x86_64 builds
 
 > **Unofficial.** This repository republishes releases of
-> [1jehuang/jcode](https://github.com/1jehuang/jcode) for **macOS on Apple
-> silicon (arm64) only**, with a few behaviours removed. It is not affiliated
+> [1jehuang/jcode](https://github.com/1jehuang/jcode) for **macOS arm64 and
+> Linux x86_64**, with a few behaviours removed. It is not affiliated
 > with or endorsed by the upstream project. Report bugs in jcode itself upstream,
 > and bugs in this build (patches, installer, release workflow) here.
 
@@ -16,13 +16,14 @@ hardcoded, so no config setting or environment variable is needed:
 |---|---|
 | [`0001-telemetry-off`](patches/0001-telemetry-off.patch) | Usage telemetry is permanently off. Nothing is sent to `telemetry.jcode.sh`: no events, transcripts, `/feedback` or `maintainer_feedback` reports. `jcode telemetry enable` does nothing. |
 | [`0002-update-from-fork`](patches/0002-update-from-fork.patch) | The built-in updater checks and downloads **only from this repository's releases**, with SHA-256 verification. The `main` update channel, which builds from upstream source, falls back to stable releases. |
-| [`0003-no-macos-extras`](patches/0003-no-macos-extras.patch) | No `~/.jcode/notifications/macos/Jcode Notifications.app`, no `~/Library/LaunchAgents/com.jcode.hotkey.plist` hotkey daemon, no auto-started menu bar helper, and no terminal-switching nudges. A hotkey LaunchAgent left by an upstream install is removed on the next launch. `jcode setup-hotkey` and `jcode setup-launcher` report that they are disabled. Turn notifications still work through the terminal or `osascript`. |
+| [`0003-no-macos-extras`](patches/0003-no-macos-extras.patch) | On macOS: no `~/.jcode/notifications/macos/Jcode Notifications.app`, no `~/Library/LaunchAgents/com.jcode.hotkey.plist` hotkey daemon, no auto-started menu bar helper, and no terminal-switching nudges. A hotkey LaunchAgent left by an upstream install is removed on the next launch. `jcode setup-hotkey` and `jcode setup-launcher` report that they are disabled. Turn notifications still work through the terminal or `osascript`. |
 | [`0004-discovery-off`](patches/0004-discovery-off.patch) | The sponsored integration-discovery tool (`discover_tools`, `api.jcode.sh`) is never registered or contacted, whatever `[sponsors]` says in the config. |
 | [`0005-no-background-key-probes`](patches/0005-no-background-key-probes.patch) | No background sweep that calls `/models` on every provider whose key is in the environment. MiniMax never falls back to `OPENAI_API_KEY`, which often holds another provider's key. The provider you actually use still refreshes its own model list. |
 
 The installer ([`install.sh`](install.sh)) is also stripped down. It sends no
 telemetry, uses no `jcode.sh` mirrors and does not edit shell rc files. It does
-not install a notification helper or a hotkey.
+not install a notification helper or a hotkey. The Linux archive retains its
+launcher, binary and required shared libraries together.
 
 Anything you enable yourself still works, such as provider logins, MCP servers,
 `jcode account` and cloud features. Those contact the services you configure.
@@ -33,7 +34,7 @@ Anything you enable yourself still works, such as provider logins, MCP servers,
 curl -fsSL https://raw.githubusercontent.com/e-kotov/jcode/ek/install.sh | bash
 ```
 
-This installs the binary to `~/.jcode/builds/versions/<version>/jcode` and links
+This installs the platform build to `~/.jcode/builds/versions/<version>/jcode` and links
 it through `~/.jcode/builds/stable/jcode` to `~/.local/bin/jcode`. This is the
 same layout the updater uses. If `~/.local/bin` is not on your `PATH`, the
 installer tells you. It does not change your shell config.
@@ -41,7 +42,7 @@ installer tells you. It does not change your shell config.
 If you already have an upstream install, run the same command. It replaces the
 binary in place, and your config, sessions and logins in `~/.jcode` are kept.
 
-Pin a version with `JCODE_VERSION=v0.88.0`. Disable automatic updates with
+Pin a version with `JCODE_VERSION=v0.89.0`. Disable automatic updates with
 `JCODE_NO_AUTO_UPDATE=1`.
 
 ## Uninstall
@@ -57,10 +58,12 @@ rm -rf ~/.jcode
 
 A [daily workflow](.github/workflows/sync-release.yml) checks for the latest
 upstream release. When it finds a new one, it checks out that tag, applies the
-patches and builds on a GitHub macOS arm64 runner. It then publishes
-`jcode-macos-aarch64.tar.gz` and `SHA256SUMS` under **the same tag** (for
-example `v0.88.0`). jcode's updater only understands plain `vX.Y.Z` versions,
-so tags carry no suffix. [`UPSTREAM_RELEASE`](UPSTREAM_RELEASE) records the last
+patches and builds on GitHub macOS arm64 and Linux x86_64 runners. The Linux
+build uses upstream's manylinux2014 recipe for a glibc 2.17 baseline. It then
+publishes `jcode-macos-aarch64.tar.gz`, `jcode-linux-x86_64.tar.gz` and a
+combined `SHA256SUMS` under **the same tag** (for example `v0.89.0`). jcode's
+updater only understands plain `vX.Y.Z` versions, so tags carry no suffix.
+[`UPSTREAM_RELEASE`](UPSTREAM_RELEASE) records the last
 upstream version built.
 
 When a patch no longer applies to a new upstream release, the workflow fails
