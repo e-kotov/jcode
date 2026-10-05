@@ -1,17 +1,17 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Egor Kotov <kotov.egor@gmail.com>
-Date: Mon, 28 Sep 2026 17:28:42 +0200
+Date: Mon, 5 Oct 2026 13:49:48 +0200
 Subject: [PATCH] telemetry: hardcode off
 
 ---
  crates/jcode-telemetry-core/src/lib.rs        | 22 ++++++++++++++++++-
  .../tests/session_creation_latency.rs         |  1 +
- .../src/tui/app/tests/onboarding_flow.rs      | 11 ++++------
+ .../app/tests/onboarding_flow_telemetry.rs    | 11 ++++------
  src/cli/telemetry.rs                          | 10 +--------
  4 files changed, 27 insertions(+), 17 deletions(-)
 
 diff --git a/crates/jcode-telemetry-core/src/lib.rs b/crates/jcode-telemetry-core/src/lib.rs
-index 4bdbb8670..da3cbcf13 100644
+index 35b6d55be..59d197ac8 100644
 --- a/crates/jcode-telemetry-core/src/lib.rs
 +++ b/crates/jcode-telemetry-core/src/lib.rs
 @@ -461,7 +461,7 @@ pub fn opt_out_source() -> Option<TelemetryOptOutSource> {
@@ -55,7 +55,7 @@ index 4bdbb8670..da3cbcf13 100644
      if TELEMETRY_PERMANENTLY_REJECTED.load(Ordering::Relaxed) {
          return false;
      }
-@@ -1359,6 +1370,9 @@ fn post_payload_with_retry(payload: serde_json::Value, timeout: Duration) -> boo
+@@ -1362,6 +1373,9 @@ fn post_payload_with_retry(payload: serde_json::Value, timeout: Duration) -> boo
  
  #[cfg(not(test))]
  fn post_transcript_payload(payload: serde_json::Value, timeout: Duration) -> bool {
@@ -65,7 +65,7 @@ index 4bdbb8670..da3cbcf13 100644
      let client = TELEMETRY_HTTP_CLIENT.get_or_init(|| {
          reqwest::blocking::Client::builder()
              .user_agent(jcode_provider_core::JCODE_USER_AGENT)
-@@ -1435,6 +1449,9 @@ fn send_transcript_payload(payload: Value) -> bool {
+@@ -1447,6 +1461,9 @@ fn send_transcript_payload(payload: Value) -> bool {
  
  #[cfg(not(test))]
  fn send_transcript_payload(payload: Value) -> bool {
@@ -75,7 +75,7 @@ index 4bdbb8670..da3cbcf13 100644
      match transcript_background_sender().try_send(payload) {
          Ok(()) => true,
          Err(TrySendError::Full(_)) => {
-@@ -1460,6 +1477,9 @@ fn send_payload(mut payload: serde_json::Value, mode: DeliveryMode) -> bool {
+@@ -1472,6 +1489,9 @@ fn send_payload(mut payload: serde_json::Value, mode: DeliveryMode) -> bool {
  
  #[cfg(not(test))]
  fn send_payload(mut payload: serde_json::Value, mode: DeliveryMode) -> bool {
@@ -97,11 +97,11 @@ index 63f2b9733..0e636f68f 100644
  fn session_creation_does_not_wait_for_unreachable_telemetry() {
      const CHILD: &str = "JCODE_TEST_SESSION_LATENCY_CHILD";
      if std::env::var_os(CHILD).is_some() {
-diff --git a/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs b/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
-index 239082739..baf28b935 100644
---- a/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
-+++ b/crates/jcode-tui/src/tui/app/tests/onboarding_flow.rs
-@@ -1714,10 +1714,9 @@ fn telemetry_pill_opens_settings_page_and_commits_choice() {
+diff --git a/crates/jcode-tui/src/tui/app/tests/onboarding_flow_telemetry.rs b/crates/jcode-tui/src/tui/app/tests/onboarding_flow_telemetry.rs
+index 03e228b2b..7a221fcbf 100644
+--- a/crates/jcode-tui/src/tui/app/tests/onboarding_flow_telemetry.rs
++++ b/crates/jcode-tui/src/tui/app/tests/onboarding_flow_telemetry.rs
+@@ -36,10 +36,9 @@ fn telemetry_pill_opens_settings_page_and_commits_choice() {
  
          // Enter commits "Send everything": usage on, content sharing on.
          assert!(app.handle_onboarding_continue_prompt_key(KeyCode::Enter));
@@ -115,7 +115,7 @@ index 239082739..baf28b935 100644
          let no_telemetry_marker = std::path::Path::new(
              &std::env::var_os("JCODE_HOME").expect("temporary JCODE_HOME"),
          )
-@@ -1766,9 +1765,7 @@ fn telemetry_page_send_nothing_disables_telemetry_and_esc_goes_back() {
+@@ -88,9 +87,7 @@ fn telemetry_page_send_nothing_disables_telemetry_and_esc_goes_back() {
              app.onboarding_phase(),
              Some(OnboardingPhase::Login { import: Some(_) })
          ));
